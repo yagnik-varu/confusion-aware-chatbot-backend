@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Chatbot Tester</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f0f2f5; }
+        #chat-box { background: white; border-radius: 8px; padding: 20px; height: 400px; overflow-y: auto; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .message { margin-bottom: 15px; padding: 10px; border-radius: 5px; }
+        .user-msg { background: #007bff; color: white; text-align: right; margin-left: 20%; }
+        .bot-msg { background: #e9ecef; color: black; margin-right: 20%; white-space: pre-wrap; }
+        .input-area { display: flex; gap: 10px; }
+        input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #218838; }
+        .system-msg { color: #666; font-size: 0.8em; text-align: center; }
+    </style>
+</head>
+<body>
+    <h2>RAG Chatbot Tester</h2>
+    <div id="chat-box">
+        <div class="system-msg">Session started. Type a message below!</div>
+    </div>
+    
+    <div class="input-area">
+        <input type="text" id="message-input" placeholder="Type your message..." />
+        <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script>
+        // Generate a random session ID for this tab
+        const sessionId = 'session-' + Math.random().toString(36).substr(2, 9);
+        const chatBox = document.getElementById('chat-box');
+        const input = document.getElementById('message-input');
+
+        input.addEventListener("keypress", function(event) {
+            if (event.key === "Enter") sendMessage();
+        });
+
+        async function sendMessage() {
+            const text = input.value.trim();
+            if (!text) return;
+
+            // Add user message to UI
+            appendMessage(text, 'user-msg');
+            input.value = '';
+
+            // Create a bot message container
+            const botMessageDiv = appendMessage('...', 'bot-msg');
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text, sessionId: sessionId })
+                });
+
+                if (!response.body) throw new Error("No response body");
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+                botMessageDiv.innerText = ''; // clear loading text
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const dataStr = line.substring(6);
+                            if (dataStr === '[DONE]') break;
+                            try {
+                                const data = JSON.parse(dataStr);
+                                if (data.text) {
+                                    botMessageDiv.innerText += data.text;
+                                    chatBox.scrollTop = chatBox.scrollHeight;
+                                }
+                            } catch (e) {
+                                console.error("Error parsing chunk", e, dataStr);
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error(err);
+                botMessageDiv.innerText = "Error: Could not connect to server.";
+            }
+        }
+
+        function appendMessage(text, className) {
+            const div = document.createElement('div');
+            div.className = 'message ' + className;
+            div.innerText = text;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return div;
+        }
+    </script>
+</body>
+</html>
