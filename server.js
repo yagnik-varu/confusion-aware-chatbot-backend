@@ -64,6 +64,27 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
 
+// Adaptive Learning Module Setup
+const AnalogyStyle = require('./src/adaptive/styles/AnalogyStyle');
+const StepByStepStyle = require('./src/adaptive/styles/StepByStepStyle');
+const VisualStyle = require('./src/adaptive/styles/VisualStyle');
+const ExampleFirstStyle = require('./src/adaptive/styles/ExampleFirstStyle');
+const { InMemoryProfileStore } = require('./src/adaptive/ProfileStore');
+const { KeywordSignalDetector } = require('./src/adaptive/SignalDetector');
+const StyleSelector = require('./src/adaptive/StyleSelector');
+const AdaptiveLearningService = require('./src/adaptive/AdaptiveLearningService');
+
+const styles = [
+    new AnalogyStyle(),
+    new StepByStepStyle(),
+    new VisualStyle(),
+    new ExampleFirstStyle()
+];
+const profileStore = new InMemoryProfileStore();
+const signalDetector = new KeywordSignalDetector();
+const styleSelector = new StyleSelector(styles);
+const adaptiveLearningService = new AdaptiveLearningService(profileStore, signalDetector, styleSelector);
+
 // Chat endpoint with Server-Sent Events (SSE)
 app.post('/chat', async (req, res) => {
     // 1. Set headers for SSE
@@ -94,8 +115,12 @@ app.post('/chat', async (req, res) => {
         // 2. RAG Retrieval Step: Find relevant chunks from our Vector DB
         const relevantChunks = await vectorStore.searchSimilar(message);
         
+        // --- ADAPTIVE LEARNING ---
+        const adaptiveInstruction = adaptiveLearningService.processTurn(sessionId, message);
+        console.log(`[RAG DEBUG] Adaptive Learning Instruction: ${adaptiveInstruction}`);
+
         // Build the new prompt
-        let prompt = "";
+        let prompt = `SYSTEM INSTRUCTION: ${adaptiveInstruction}\n\n`;
         
         if (relevantChunks.length > 0) {
             console.log(`[RAG DEBUG] Injecting context into the Gemini prompt...`);
